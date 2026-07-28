@@ -105,6 +105,10 @@ class Kairo {
             initializer.onWorldLoad();
         });
 
+        this.router.beforeEvents.startup.subscribe((ev) => {
+            ev.addonApi.register("kairo:getAddonInventory", () => this.getAddonInventory());
+        });
+
         const shouldRegisterCommands = REGISTER_COMMANDS;
         if (shouldRegisterCommands) this.router.beforeEvents.startup.subscribe((ev) => {
             ev.customCommandRegistry.registerEnum("kairo:addons_subcommand", [
@@ -157,6 +161,34 @@ class Kairo {
 
     openUI(player: Player): void {
         this.ui?.open(player);
+    }
+
+    private getAddonInventory(): readonly {
+        addonId: string;
+        name: string;
+        version?: string;
+        state: "active" | "inactive" | "unresolved";
+    }[] {
+        if (!this.activationController) return [];
+        const world = this.activationController.world;
+        return [...world.addonIdIndex.entries()].map(([addonId, kairoIds]) => {
+            let state: "active" | "inactive" | "unresolved" = "unresolved";
+            let name = addonId;
+            let version: string | undefined;
+            for (const id of kairoIds) {
+                const runtime = world.runtimes.get(id);
+                const registry = world.registries.get(id);
+                if (registry) name = registry.name;
+                if (runtime?.state === AddonState.ACTIVE && registry) {
+                    return { addonId, name, version: SemVerUtils.format(registry.version), state: "active" as const };
+                }
+                if (runtime?.state === AddonState.INACTIVE) {
+                    state = "inactive";
+                    if (registry) version = SemVerUtils.format(registry.version);
+                }
+            }
+            return { addonId, name, version, state };
+        }).sort((a, b) => a.addonId.localeCompare(b.addonId));
     }
 
     private commandList(player: Player): void {
