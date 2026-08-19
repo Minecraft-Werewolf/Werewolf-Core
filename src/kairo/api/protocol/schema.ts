@@ -1,69 +1,120 @@
-import { type Static, Type } from "@sinclair/typebox";
+import { createValidator, hasOnlyKeys, isInteger, isObject } from "../../utils/validate";
 
-export const ApiCallSchema = Type.Object(
-    {
-        type: Type.Union([Type.Literal("send"), Type.Literal("request")]),
-        correlationId: Type.String(),
-        targetAddonId: Type.String(),
-        callerAddonId: Type.Optional(Type.String()),
-        apiName: Type.String(),
-        args: Type.String(),
-        timeout: Type.Optional(Type.Integer({ minimum: 1 })),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
+export type ApiCall = {
+    readonly type: "send" | "request";
+    readonly correlationId: string;
+    readonly targetAddonId: string;
+    readonly callerAddonId?: string;
+    readonly apiName: string;
+    readonly args: string;
+    readonly timeout?: number;
+    readonly timestamp: number;
+};
+
+export type ApiInvoke = {
+    readonly type: "send" | "request";
+    readonly correlationId: string;
+    readonly callerAddonId: string;
+    readonly apiName: string;
+    readonly args: string;
+    readonly timestamp: number;
+};
+
+export type ApiHandlerResponse = {
+    readonly correlationId: string;
+    readonly success: boolean;
+    readonly result?: string;
+    readonly error?: string;
+    readonly timestamp: number;
+};
+
+export type ApiResultErrorType =
+    | "API_NOT_FOUND"
+    | "BEFORE_HOOK_EXECUTION"
+    | "AFTER_HOOK_EXECUTION"
+    | "HANDLER_EXECUTION"
+    | "TIMEOUT"
+    | "PROTOCOL_ERROR"
+    | "HOST_SWITCHING";
+
+export type ApiResult = {
+    readonly correlationId: string;
+    readonly success: boolean;
+    readonly result?: string;
+    readonly canceled?: true;
+    readonly reason?: string;
+    readonly errorType?: ApiResultErrorType;
+    readonly error?: string;
+    readonly timestamp: number;
+};
+
+const apiResultErrorTypes = new Set<ApiResultErrorType>([
+    "API_NOT_FOUND",
+    "BEFORE_HOOK_EXECUTION",
+    "AFTER_HOOK_EXECUTION",
+    "HANDLER_EXECUTION",
+    "TIMEOUT",
+    "PROTOCOL_ERROR",
+    "HOST_SWITCHING",
+]);
+
+export const validateApiCall = createValidator<ApiCall>(
+    "ApiCall",
+    (value) =>
+        isObject(value) &&
+        hasOnlyKeys(value, [
+            "type",
+            "correlationId",
+            "targetAddonId",
+            "callerAddonId",
+            "apiName",
+            "args",
+            "timeout",
+            "timestamp",
+        ]) &&
+        (value.type === "send" || value.type === "request") &&
+        typeof value.correlationId === "string" &&
+        typeof value.targetAddonId === "string" &&
+        (value.callerAddonId === undefined || typeof value.callerAddonId === "string") &&
+        typeof value.apiName === "string" &&
+        typeof value.args === "string" &&
+        (value.timeout === undefined || isInteger(value.timeout, 1)) &&
+        isInteger(value.timestamp, 0),
 );
 
-export const ApiInvokeSchema = Type.Object(
-    {
-        type: Type.Union([Type.Literal("send"), Type.Literal("request")]),
-        correlationId: Type.String(),
-        callerAddonId: Type.String(),
-        apiName: Type.String(),
-        args: Type.String(),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
+export const validateApiHandlerResponse = createValidator<ApiHandlerResponse>(
+    "ApiHandlerResponse",
+    (value) =>
+        isObject(value) &&
+        hasOnlyKeys(value, ["correlationId", "success", "result", "error", "timestamp"]) &&
+        typeof value.correlationId === "string" &&
+        typeof value.success === "boolean" &&
+        (value.result === undefined || typeof value.result === "string") &&
+        (value.error === undefined || typeof value.error === "string") &&
+        isInteger(value.timestamp, 0),
 );
 
-export const ApiHandlerResponseSchema = Type.Object(
-    {
-        correlationId: Type.String(),
-        success: Type.Boolean(),
-        result: Type.Optional(Type.String()),
-        error: Type.Optional(Type.String()),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
+export const validateApiResult = createValidator<ApiResult>(
+    "ApiResult",
+    (value) =>
+        isObject(value) &&
+        hasOnlyKeys(value, [
+            "correlationId",
+            "success",
+            "result",
+            "canceled",
+            "reason",
+            "errorType",
+            "error",
+            "timestamp",
+        ]) &&
+        typeof value.correlationId === "string" &&
+        typeof value.success === "boolean" &&
+        (value.result === undefined || typeof value.result === "string") &&
+        (value.canceled === undefined || value.canceled === true) &&
+        (value.reason === undefined || typeof value.reason === "string") &&
+        (value.errorType === undefined ||
+            apiResultErrorTypes.has(value.errorType as ApiResultErrorType)) &&
+        (value.error === undefined || typeof value.error === "string") &&
+        isInteger(value.timestamp, 0),
 );
-
-export const ApiResultSchema = Type.Object(
-    {
-        correlationId: Type.String(),
-        success: Type.Boolean(),
-        result: Type.Optional(Type.String()),
-        canceled: Type.Optional(Type.Literal(true)),
-        reason: Type.Optional(Type.String()),
-        errorType: Type.Optional(
-            Type.Union([
-                Type.Literal("API_NOT_FOUND"),
-                Type.Literal("BEFORE_HOOK_EXECUTION"),
-                Type.Literal("AFTER_HOOK_EXECUTION"),
-                Type.Literal("HANDLER_EXECUTION"),
-                Type.Literal("TIMEOUT"),
-                Type.Literal("PROTOCOL_ERROR"),
-                Type.Literal("HOST_SWITCHING"),
-            ]),
-        ),
-        error: Type.Optional(Type.String()),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
-);
-
-export type ApiCall = Static<typeof ApiCallSchema>;
-export type ApiInvoke = Static<typeof ApiInvokeSchema>;
-export type ApiHandlerResponse = Static<typeof ApiHandlerResponseSchema>;
-export type ApiResult = Static<typeof ApiResultSchema>;
-
-export type ApiResultErrorType = NonNullable<ApiResult["errorType"]>;

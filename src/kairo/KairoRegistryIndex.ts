@@ -1,6 +1,6 @@
 import type { SemVer } from "@kairo-js/properties";
 import type { KairoRegistry } from "@kairo-js/router";
-import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "./utils/semver";
 import type { ApiManifest } from "./init/api/ApiManifestSchema";
 import type { HandoffRegistryEntry } from "./handoff/HandoffPayload";
 
@@ -33,7 +33,10 @@ export class KairoRegistryIndex implements KairoRegistryQueryable {
             throw new Error(`Registry already exists: ${key}`);
         }
 
-        this.byKey.set(key, { registry, manifest: { apis: [], hooks: [], eventSubscriptions: [] } });
+        this.byKey.set(key, {
+            registry,
+            manifest: { apis: [], hooks: [], eventSubscriptions: [] },
+        });
         this.indexByAddonId(registry);
         this.indexDependents(registry);
     }

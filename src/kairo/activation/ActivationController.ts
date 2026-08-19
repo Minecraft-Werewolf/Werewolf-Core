@@ -1,5 +1,5 @@
 import type { KairoRegistry } from "@kairo-js/router";
-import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "../utils/semver";
 import type { KairoRuntime } from "../../minecraft/KairoRuntime";
 import type { KairoRegistryQueryable } from "../KairoRegistryIndex";
 import type { HandoffPayload } from "../handoff/HandoffPayload";
@@ -126,15 +126,20 @@ export class ActivationController {
             registries.set(entry.kairoId, registry);
 
             let group = addonIdIndex.get(entry.addonId);
-            if (!group) { group = new Set(); addonIdIndex.set(entry.addonId, group); }
+            if (!group) {
+                group = new Set();
+                addonIdIndex.set(entry.addonId, group);
+            }
             group.add(entry.kairoId);
         }
 
         for (const rt of payload.runtimes) {
             const state =
-                rt.state === "ACTIVE" ? AddonState.ACTIVE
-                : rt.state === "INACTIVE" ? AddonState.INACTIVE
-                : AddonState.UNRESOLVED;
+                rt.state === "ACTIVE"
+                    ? AddonState.ACTIVE
+                    : rt.state === "INACTIVE"
+                      ? AddonState.INACTIVE
+                      : AddonState.UNRESOLVED;
 
             const inactiveReasons: InactiveReasons = new Map();
             for (const r of rt.inactiveReasons) {
@@ -153,7 +158,12 @@ export class ActivationController {
                 });
             }
 
-            runtimes.set(rt.kairoId, { kairoId: rt.kairoId, state, inactiveReasons, unresolvedReasons });
+            runtimes.set(rt.kairoId, {
+                kairoId: rt.kairoId,
+                state,
+                inactiveReasons,
+                unresolvedReasons,
+            });
         }
 
         const previousSession: PreviousSessionStore = new Map();
@@ -175,7 +185,7 @@ export class ActivationController {
         this._activationOrder = payload.activationOrder;
     }
 
-    // ── Preview methods ──────────────────────────────────────────
+    // ���� Preview methods ������������������������������������������������������������������������������������
 
     previewDisable(kairoId: KairoId): DisablePreview {
         const reverseGraph = this.world.cachedDeclaredReverseGraph;
@@ -212,7 +222,7 @@ export class ActivationController {
 
         const plan = this.resolutionService.resolve(world, scope, true, kairoId);
 
-        const toActivate = plan.orderedKairoIds.filter(id => {
+        const toActivate = plan.orderedKairoIds.filter((id) => {
             return world.runtimes.get(id)?.state === AddonState.INACTIVE;
         });
 
@@ -221,8 +231,9 @@ export class ActivationController {
         for (const planId of plan.orderedKairoIds) {
             const planReg = world.registries.get(planId);
             if (!planReg) continue;
-            const displaced = [...(world.addonIdIndex.get(planReg.addonId) ?? [])]
-                .find(id => id !== planId && preActiveIds.has(id));
+            const displaced = [...(world.addonIdIndex.get(planReg.addonId) ?? [])].find(
+                (id) => id !== planId && preActiveIds.has(id),
+            );
             if (displaced) implicitVersionSwitches.push({ from: displaced, to: planId });
         }
 
@@ -234,8 +245,9 @@ export class ActivationController {
         const newRegistry = world.registries.get(newKairoId);
         if (!newRegistry) return { cascadeVictims: [], continuingIds: [] };
 
-        const currentActiveId = [...(world.addonIdIndex.get(newRegistry.addonId) ?? [])]
-            .find(id => world.runtimes.get(id)?.state === AddonState.ACTIVE);
+        const currentActiveId = [...(world.addonIdIndex.get(newRegistry.addonId) ?? [])].find(
+            (id) => world.runtimes.get(id)?.state === AddonState.ACTIVE,
+        );
 
         if (!currentActiveId) return { cascadeVictims: [], continuingIds: [] };
 
@@ -256,8 +268,8 @@ export class ActivationController {
             const versionRange = depRegistry.dependencies[newRegistry.addonId];
             const compatible = versionRange
                 ? satisfiesVersionRange(newRegistry.version, versionRange, {
-                    includePrerelease: !this.hasStableCandidate(world, newRegistry.addonId),
-                })
+                      includePrerelease: !this.hasStableCandidate(world, newRegistry.addonId),
+                  })
                 : false;
 
             if (compatible) {
@@ -270,12 +282,14 @@ export class ActivationController {
         return { cascadeVictims, continuingIds };
     }
 
-    // ── Execute methods ──────────────────────────────────────────
+    // ���� Execute methods ������������������������������������������������������������������������������������
 
     async executeDisable(kairoId: KairoId): Promise<void> {
         const world = this.world;
         const registry = world.registries.get(kairoId);
-        const label = registry ? `${registry.addonId}@${registry.version.major}.${registry.version.minor}.${registry.version.patch}` : kairoId;
+        const label = registry
+            ? `${registry.addonId}@${registry.version.major}.${registry.version.minor}.${registry.version.patch}`
+            : kairoId;
 
         const { cascadeVictims } = this.previewDisable(kairoId);
 
@@ -376,7 +390,7 @@ export class ActivationController {
         // Deactivate old version
         const oldSuccess = await this.deactivationExecutor.deactivate(oldKairoId);
         if (!oldSuccess) {
-            // Abort — leave old as ACTIVE
+            // Abort ? leave old as ACTIVE
             return;
         }
         const oldRt = world.runtimes.get(oldKairoId);
@@ -405,7 +419,9 @@ export class ActivationController {
         this.onActivationStateChanged?.();
     }
 
-    resolveLatestKairoId(addonId: string): { kairoId: KairoId; origin: "latest" | "explicit" } | undefined {
+    resolveLatestKairoId(
+        addonId: string,
+    ): { kairoId: KairoId; origin: "latest" | "explicit" } | undefined {
         const world = this.world;
         const kairoIds = world.addonIdIndex.get(addonId);
         if (!kairoIds) return undefined;
@@ -418,17 +434,18 @@ export class ActivationController {
             return reg && !SemVerUtils.isPrerelease(reg.version);
         });
         const pool = stableIds.length > 0 ? stableIds : selectableIds;
-        const kairoId = pool.length > 0
-            ? pool.reduce((best, cur) => {
-                const a = world.registries.get(best)!;
-                const b = world.registries.get(cur)!;
-                return SemVerUtils.compare(b.version, a.version) > 0 ? cur : best;
-              })
-            : undefined;
+        const kairoId =
+            pool.length > 0
+                ? pool.reduce((best, cur) => {
+                      const a = world.registries.get(best)!;
+                      const b = world.registries.get(cur)!;
+                      return SemVerUtils.compare(b.version, a.version) > 0 ? cur : best;
+                  })
+                : undefined;
         return kairoId ? { kairoId, origin: "latest" } : undefined;
     }
 
-    // ── kairo-specific ───────────────────────────────────────────
+    // ���� kairo-specific ��������������������������������������������������������������������������������������
 
     saveKairoVersionPreference(kairoId: KairoId, origin: "latest" | "explicit"): void {
         const registry = this.world.registries.get(kairoId);
@@ -440,7 +457,7 @@ export class ActivationController {
         this.onSessionChanged?.(this.world.previousSession);
     }
 
-    // ── Private helpers ──────────────────────────────────────────
+    // ���� Private helpers ������������������������������������������������������������������������������������
 
     private buildManualActivateScope(kairoId: KairoId): ReadonlySet<KairoId> {
         const world = this.world;
@@ -449,7 +466,12 @@ export class ActivationController {
                 includePrerelease: !this.hasStableCandidate(world, spec.addonId),
             });
 
-        const closure = buildDependencyClosure(kairoId, world.registries, world.addonIdIndex, versionMatcher);
+        const closure = buildDependencyClosure(
+            kairoId,
+            world.registries,
+            world.addonIdIndex,
+            versionMatcher,
+        );
         const scope = new Set<KairoId>(closure);
 
         for (const closureId of closure) {
@@ -474,7 +496,10 @@ export class ActivationController {
                 const targets = world.addonIdIndex.get(addonId) ?? new Set();
                 for (const targetId of targets) {
                     let deps = graph.get(targetId);
-                    if (!deps) { deps = new Set(); graph.set(targetId, deps); }
+                    if (!deps) {
+                        deps = new Set();
+                        graph.set(targetId, deps);
+                    }
                     deps.add(kairoId);
                 }
             }
@@ -506,7 +531,10 @@ export class ActivationController {
             });
 
             let group = addonIdIndex.get(registry.addonId);
-            if (!group) { group = new Set(); addonIdIndex.set(registry.addonId, group); }
+            if (!group) {
+                group = new Set();
+                addonIdIndex.set(registry.addonId, group);
+            }
             group.add(kairoId);
         }
 

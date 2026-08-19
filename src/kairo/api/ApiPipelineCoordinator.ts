@@ -1,7 +1,7 @@
 import type { Disposable } from "@kairo-js/router";
-import { compile, safeJsonParse } from "@kairo-js/utils";
 import type { KairoRuntime } from "../../minecraft/KairoRuntime";
 import type { KairoWorldState } from "../activation/types/world";
+import { safeJsonParse } from "../utils/json";
 import { ApiEventId } from "./ApiEventId";
 import { ApiResultDispatcher } from "./ApiResultDispatcher";
 import { CallSnapshotResolver } from "./CallSnapshotResolver";
@@ -11,10 +11,10 @@ import { PendingRequestStore } from "./PendingRequestStore";
 import { RemoteHookInvoker } from "./RemoteHookInvoker";
 import { RollbackExecutor } from "./RollbackExecutor";
 import {
-    ApiCallSchema,
-    ApiHandlerResponseSchema,
     type ApiCall,
     type ApiHandlerResponse,
+    validateApiCall,
+    validateApiHandlerResponse,
 } from "./protocol/schema";
 import type { KairoId, PendingEntry, ResolvedHook, ResolvedHookChain } from "./types";
 
@@ -164,7 +164,11 @@ export class ApiPipelineCoordinator implements Disposable {
         } catch {
             if (call.type === "request") {
                 this.pendingStore.remove(call.correlationId);
-                this.resultDispatcher.sendError(call.correlationId, "PROTOCOL_ERROR", "Failed to parse args");
+                this.resultDispatcher.sendError(
+                    call.correlationId,
+                    "PROTOCOL_ERROR",
+                    "Failed to parse args",
+                );
             }
             return;
         }
@@ -183,7 +187,10 @@ export class ApiPipelineCoordinator implements Disposable {
         if (beforeResult.kind === "failed") {
             if (call.type === "request") {
                 this.pendingStore.remove(call.correlationId);
-                const msg = beforeResult.error instanceof Error ? beforeResult.error.message : String(beforeResult.error);
+                const msg =
+                    beforeResult.error instanceof Error
+                        ? beforeResult.error.message
+                        : String(beforeResult.error);
                 this.resultDispatcher.sendError(call.correlationId, "BEFORE_HOOK_EXECUTION", msg);
             } else {
             }
@@ -258,7 +265,11 @@ export class ApiPipelineCoordinator implements Disposable {
             result = response.result !== undefined ? JSON.parse(response.result) : undefined;
         } catch {
             this.pendingStore.remove(correlationId);
-            this.resultDispatcher.sendError(correlationId, "PROTOCOL_ERROR", "Failed to parse handler result");
+            this.resultDispatcher.sendError(
+                correlationId,
+                "PROTOCOL_ERROR",
+                "Failed to parse handler result",
+            );
             return;
         }
 
@@ -276,7 +287,10 @@ export class ApiPipelineCoordinator implements Disposable {
 
             if (afterResult.kind === "failed") {
                 this.pendingStore.remove(correlationId);
-                const msg = afterResult.error instanceof Error ? afterResult.error.message : String(afterResult.error);
+                const msg =
+                    afterResult.error instanceof Error
+                        ? afterResult.error.message
+                        : String(afterResult.error);
                 this.resultDispatcher.sendError(correlationId, "AFTER_HOOK_EXECUTION", msg);
                 return;
             }
@@ -288,6 +302,3 @@ export class ApiPipelineCoordinator implements Disposable {
         this.resultDispatcher.sendSuccess(correlationId, result);
     }
 }
-
-const validateApiCall = compile(ApiCallSchema);
-const validateApiHandlerResponse = compile(ApiHandlerResponseSchema);

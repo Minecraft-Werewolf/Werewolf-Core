@@ -1,4 +1,4 @@
-import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "../utils/semver";
 import { buildDependencyClosure } from "./resolution/DependencyClosureBuilder";
 import { ResolutionService } from "./resolution/ResolutionService";
 import { satisfiesVersionRange } from "./resolution/versionRange";
@@ -46,15 +46,22 @@ export class OptionalActivator {
                 const candidates = world.addonIdIndex.get(spec.addonId) ?? new Set();
                 const hasStableCandidate = [...candidates].some((candidateId) => {
                     const candidateRegistry = world.registries.get(candidateId);
-                    return candidateRegistry !== undefined
-                        && !SemVerUtils.isPrerelease(candidateRegistry.version);
+                    return (
+                        candidateRegistry !== undefined &&
+                        !SemVerUtils.isPrerelease(candidateRegistry.version)
+                    );
                 });
                 return satisfiesVersionRange(reg.version, spec.versionRange, {
                     includePrerelease: !hasStableCandidate,
                 });
             };
 
-            const closure = buildDependencyClosure(kairoId, world.registries, world.addonIdIndex, versionMatcher);
+            const closure = buildDependencyClosure(
+                kairoId,
+                world.registries,
+                world.addonIdIndex,
+                versionMatcher,
+            );
             const scope = new Set<KairoId>(closure);
 
             // Add same addonId groups for conflict detection
@@ -68,7 +75,8 @@ export class OptionalActivator {
                 const activeIds = world.addonIdIndex.get(r.addonId);
                 if (activeIds) {
                     for (const activeId of activeIds) {
-                        if (world.runtimes.get(activeId)?.state === AddonState.ACTIVE) scope.add(activeId);
+                        if (world.runtimes.get(activeId)?.state === AddonState.ACTIVE)
+                            scope.add(activeId);
                     }
                 }
             }

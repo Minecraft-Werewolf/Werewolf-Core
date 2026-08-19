@@ -1,4 +1,5 @@
-import { safeJsonParse, toError } from "@kairo-js/utils";
+import { toError } from "../../utils/error";
+import { safeJsonParse } from "../../utils/json";
 import { DiscoveryResponseParseError, DiscoveryResponseParseErrorReason } from "./response/errors";
 import type { DiscoveryResponse } from "./response/schema";
 import { validateDiscoveryResponse } from "./response/validate";

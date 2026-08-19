@@ -1,4 +1,4 @@
-import type { Random } from "@kairo-js/utils";
+import type { Random } from "../utils/random";
 import type { KairoRuntime } from "../../minecraft/KairoRuntime";
 import {
     ProvideIdRegistryError,

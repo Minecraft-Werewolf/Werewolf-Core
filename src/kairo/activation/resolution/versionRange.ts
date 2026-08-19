@@ -1,5 +1,5 @@
 import type { SemVer } from "@kairo-js/properties";
-import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "../../utils/semver";
 import semver from "semver";
 
 export function satisfiesVersionRange(

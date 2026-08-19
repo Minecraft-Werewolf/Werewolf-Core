@@ -1,4 +1,4 @@
-import { validateTimestamp } from "@kairo-js/utils";
+import { validateTimestamp } from "../../utils/timestamp";
 import { ActivationResponseError, ActivationResponseErrorReason } from "./response/errors";
 import type { ActivationResponse } from "./response/schema";
 

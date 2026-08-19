@@ -1,14 +1,23 @@
-import { compile, safeJsonParse } from "@kairo-js/utils";
 import type { KairoRuntime } from "../../minecraft/KairoRuntime";
 import type { Disposable } from "@kairo-js/router";
-import { HookResponseMessageSchema, type HookInvokeMessage, type HookResponseMessage } from "./hook/schema";
+import {
+    type HookInvokeMessage,
+    type HookResponseMessage,
+    validateHookResponseMessage,
+} from "./hook/schema";
 import { stringifyHookInvokeMessage } from "./hook/stringify";
 import type { ResolvedHook } from "./types";
+import { safeJsonParse } from "../utils/json";
 
 const HOOK_TIMEOUT_TICKS = 20;
 
 export type RemoteBeforeResult =
-    | { outcome: "continue"; modifiedArgs: unknown; rollbackData: unknown; hasRollbackData: boolean }
+    | {
+          outcome: "continue";
+          modifiedArgs: unknown;
+          rollbackData: unknown;
+          hasRollbackData: boolean;
+      }
     | { outcome: "cancel" }
     | { outcome: "cancel_with_result"; cancelResult: unknown }
     | { outcome: "failed"; error?: string };
@@ -68,11 +77,13 @@ export class RemoteHookInvoker implements Disposable {
         if (response.outcome === "failed") return { outcome: "failed", error: response.error };
         if (response.outcome === "cancel") return { outcome: "cancel" };
         if (response.outcome === "cancel_with_result") {
-            const cancelResult = response.cancelResult !== undefined ? JSON.parse(response.cancelResult) : undefined;
+            const cancelResult =
+                response.cancelResult !== undefined ? JSON.parse(response.cancelResult) : undefined;
             return { outcome: "cancel_with_result", cancelResult };
         }
 
-        const modifiedArgs = response.modifiedArgs !== undefined ? JSON.parse(response.modifiedArgs) : args;
+        const modifiedArgs =
+            response.modifiedArgs !== undefined ? JSON.parse(response.modifiedArgs) : args;
         const hasRollbackData = response.rollbackData !== undefined;
         const rollbackData = hasRollbackData ? JSON.parse(response.rollbackData!) : undefined;
         return { outcome: "continue", modifiedArgs, rollbackData, hasRollbackData };
@@ -102,7 +113,8 @@ export class RemoteHookInvoker implements Disposable {
         if (!response) return { outcome: "failed", error: "Hook invocation timed out" };
         if (response.outcome === "failed") return { outcome: "failed", error: response.error };
 
-        const modifiedResult = response.modifiedResult !== undefined ? JSON.parse(response.modifiedResult) : result;
+        const modifiedResult =
+            response.modifiedResult !== undefined ? JSON.parse(response.modifiedResult) : result;
         return { outcome: "continue", modifiedResult };
     }
 
@@ -134,7 +146,10 @@ export class RemoteHookInvoker implements Disposable {
         return undefined;
     }
 
-    private send(targetKairoId: string, msg: HookInvokeMessage): Promise<HookResponseMessage | null> {
+    private send(
+        targetKairoId: string,
+        msg: HookInvokeMessage,
+    ): Promise<HookResponseMessage | null> {
         return new Promise<HookResponseMessage | null>((resolve) => {
             const timeoutDisposable = this.runtime.runTimeout(() => {
                 this.pending.delete(msg.hookCorrelationId);
@@ -161,7 +176,7 @@ export class RemoteHookInvoker implements Disposable {
         let response: HookResponseMessage;
         try {
             const parsed = safeJsonParse(rawMessage, () => new Error("parse failed"));
-            if (!validateHookResponse(parsed)) return;
+            if (!validateHookResponseMessage(parsed)) return;
             response = parsed as HookResponseMessage;
         } catch {
             return;
@@ -175,5 +190,3 @@ export class RemoteHookInvoker implements Disposable {
         return `khk-${this.sessionId}-${this.counter++}`;
     }
 }
-
-const validateHookResponse = compile(HookResponseMessageSchema);

@@ -1,11 +1,9 @@
-import { safeJsonParse } from "@kairo-js/utils";
+import { safeJsonParse } from "../../utils/json";
 import type { KairoRegistryIndex } from "../../KairoRegistryIndex";
 import { type ApiManifest, validateApiManifestMessage } from "./ApiManifestSchema";
 
 export class ApiManifestController {
-    constructor(
-        private readonly kairoRegistryIndex: KairoRegistryIndex,
-    ) {}
+    constructor(private readonly kairoRegistryIndex: KairoRegistryIndex) {}
 
     processManifest(kairoId: string, manifest: ApiManifest): void {
         this.kairoRegistryIndex.setManifest(kairoId, manifest);

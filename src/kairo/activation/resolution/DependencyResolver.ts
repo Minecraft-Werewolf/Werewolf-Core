@@ -1,4 +1,4 @@
-﻿import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "../../utils/semver";
 import { AddonState, InactiveReasonCode, UnresolvedReasonCode, type KairoId } from "../types/state";
 import type { ResolutionContext } from "../types/context";
 import { setInactive, setUnresolved } from "../helpers/RuntimeTransition";
@@ -30,8 +30,10 @@ export class DependencyResolver {
                 const isRangePrerelease = spec.versionRange.includes("-");
                 const hasStableCandidate = [...candidates].some((candidateId) => {
                     const candidateRegistry = ctx.registries.get(candidateId);
-                    return candidateRegistry !== undefined
-                        && !SemVerUtils.isPrerelease(candidateRegistry.version);
+                    return (
+                        candidateRegistry !== undefined &&
+                        !SemVerUtils.isPrerelease(candidateRegistry.version)
+                    );
                 });
 
                 // Collect all matching KairoIds
@@ -90,8 +92,12 @@ export class DependencyResolver {
                 const targetRuntime = ctx.runtimes.get(bestId);
 
                 if (targetRuntime?.state === AddonState.UNRESOLVED) {
-                    if (targetRuntime.unresolvedReasons.has(UnresolvedReasonCode.CIRCULAR_DEPENDENCY)) {
-                        // skip 窶・Step 4 BFS will propagate DEPENDENCY_UNRESOLVED
+                    if (
+                        targetRuntime.unresolvedReasons.has(
+                            UnresolvedReasonCode.CIRCULAR_DEPENDENCY,
+                        )
+                    ) {
+                        // skip  EStep 4 BFS will propagate DEPENDENCY_UNRESOLVED
                     } else {
                         setUnresolved(runtime, {
                             code: UnresolvedReasonCode.DEPENDENCY_UNRESOLVED,

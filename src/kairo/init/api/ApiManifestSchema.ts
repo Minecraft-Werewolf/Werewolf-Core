@@ -1,35 +1,74 @@
-import { compile } from "@kairo-js/utils";
-import { type Static, Type } from "@sinclair/typebox";
+import {
+    createValidator,
+    hasOnlyKeys,
+    isInteger,
+    isObject,
+    isStringArray,
+} from "../../utils/validate";
 
-export const ApiManifestMessageSchema = Type.Object(
-    {
-        kairoId: Type.String(),
-        apis: Type.Array(Type.Object({ name: Type.String() })),
-        hooks: Type.Array(
-            Type.Object({
-                targetAddonId: Type.String(),
-                apiName: Type.String(),
-                priority: Type.Integer({ minimum: -2147483648, maximum: 2147483647 }),
-                phases: Type.Array(Type.String()),
-                declarationSequence: Type.Integer({ minimum: 0 }),
-                hasRollback: Type.Boolean(),
-            }),
-        ),
-        eventSubscriptions: Type.Optional(
-            Type.Array(
-                Type.Object({
-                    emitterAddonId: Type.String(),
-                    eventName: Type.String(),
-                }),
-            ),
-        ),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
+export type ApiManifestMessage = {
+    readonly kairoId: string;
+    readonly apis: readonly { readonly name: string }[];
+    readonly hooks: readonly ApiManifestHookEntry[];
+    readonly eventSubscriptions?: readonly {
+        readonly emitterAddonId: string;
+        readonly eventName: string;
+    }[];
+    readonly timestamp: number;
+};
+
+export type ApiManifest = Pick<ApiManifestMessage, "apis" | "hooks" | "eventSubscriptions">;
+
+export type ApiManifestHookEntry = {
+    readonly targetAddonId: string;
+    readonly apiName: string;
+    readonly priority: number;
+    readonly phases: readonly string[];
+    readonly declarationSequence: number;
+    readonly hasRollback: boolean;
+};
+
+export const validateApiManifestMessage = createValidator<ApiManifestMessage>(
+    "ApiManifestMessage",
+    (value) =>
+        isObject(value) &&
+        hasOnlyKeys(value, ["kairoId", "apis", "hooks", "eventSubscriptions", "timestamp"]) &&
+        typeof value.kairoId === "string" &&
+        Array.isArray(value.apis) &&
+        value.apis.every(
+            (entry) =>
+                isObject(entry) && hasOnlyKeys(entry, ["name"]) && typeof entry.name === "string",
+        ) &&
+        Array.isArray(value.hooks) &&
+        value.hooks.every(isApiManifestHookEntry) &&
+        (value.eventSubscriptions === undefined ||
+            (Array.isArray(value.eventSubscriptions) &&
+                value.eventSubscriptions.every(
+                    (entry) =>
+                        isObject(entry) &&
+                        hasOnlyKeys(entry, ["emitterAddonId", "eventName"]) &&
+                        typeof entry.emitterAddonId === "string" &&
+                        typeof entry.eventName === "string",
+                ))) &&
+        isInteger(value.timestamp, 0),
 );
 
-export type ApiManifestMessage = Static<typeof ApiManifestMessageSchema>;
-export type ApiManifest = Pick<ApiManifestMessage, "apis" | "hooks" | "eventSubscriptions">;
-export type ApiManifestHookEntry = ApiManifestMessage["hooks"][number];
-
-export const validateApiManifestMessage = compile(ApiManifestMessageSchema);
+function isApiManifestHookEntry(value: unknown): value is ApiManifestHookEntry {
+    return (
+        isObject(value) &&
+        hasOnlyKeys(value, [
+            "targetAddonId",
+            "apiName",
+            "priority",
+            "phases",
+            "declarationSequence",
+            "hasRollback",
+        ]) &&
+        typeof value.targetAddonId === "string" &&
+        typeof value.apiName === "string" &&
+        isInteger(value.priority, -2147483648, 2147483647) &&
+        isStringArray(value.phases) &&
+        isInteger(value.declarationSequence, 0) &&
+        typeof value.hasRollback === "boolean"
+    );
+}

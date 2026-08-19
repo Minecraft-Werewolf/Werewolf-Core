@@ -1,41 +1,56 @@
-import { type Static, Type } from "@sinclair/typebox";
+import { createValidator, hasOnlyKeys, isInteger, isObject } from "../../utils/validate";
 
-export const HookInvokeMessageSchema = Type.Object(
-    {
-        hookCorrelationId: Type.String(),
-        phase: Type.Union([Type.Literal("before"), Type.Literal("after"), Type.Literal("rollback")]),
-        targetAddonId: Type.String(),
-        apiName: Type.String(),
-        declarationSequence: Type.Integer({ minimum: 0 }),
-        args: Type.String(),
-        result: Type.Optional(Type.String()),
-        rollbackData: Type.Optional(Type.String()),
-        callerAddonId: Type.String(),
-        callType: Type.Union([Type.Literal("send"), Type.Literal("request")]),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
+export type HookInvokeMessage = {
+    readonly hookCorrelationId: string;
+    readonly phase: "before" | "after" | "rollback";
+    readonly targetAddonId: string;
+    readonly apiName: string;
+    readonly declarationSequence: number;
+    readonly args: string;
+    readonly result?: string;
+    readonly rollbackData?: string;
+    readonly callerAddonId: string;
+    readonly callType: "send" | "request";
+    readonly timestamp: number;
+};
+
+export type HookResponseMessage = {
+    readonly hookCorrelationId: string;
+    readonly outcome: "continue" | "cancel" | "cancel_with_result" | "failed";
+    readonly modifiedArgs?: string;
+    readonly cancelResult?: string;
+    readonly rollbackData?: string;
+    readonly modifiedResult?: string;
+    readonly returnedArgs?: string;
+    readonly error?: string;
+    readonly timestamp: number;
+};
+
+export const validateHookResponseMessage = createValidator<HookResponseMessage>(
+    "HookResponseMessage",
+    (value) =>
+        isObject(value) &&
+        hasOnlyKeys(value, [
+            "hookCorrelationId",
+            "outcome",
+            "modifiedArgs",
+            "cancelResult",
+            "rollbackData",
+            "modifiedResult",
+            "returnedArgs",
+            "error",
+            "timestamp",
+        ]) &&
+        typeof value.hookCorrelationId === "string" &&
+        (value.outcome === "continue" ||
+            value.outcome === "cancel" ||
+            value.outcome === "cancel_with_result" ||
+            value.outcome === "failed") &&
+        (value.modifiedArgs === undefined || typeof value.modifiedArgs === "string") &&
+        (value.cancelResult === undefined || typeof value.cancelResult === "string") &&
+        (value.rollbackData === undefined || typeof value.rollbackData === "string") &&
+        (value.modifiedResult === undefined || typeof value.modifiedResult === "string") &&
+        (value.returnedArgs === undefined || typeof value.returnedArgs === "string") &&
+        (value.error === undefined || typeof value.error === "string") &&
+        isInteger(value.timestamp, 0),
 );
-
-export const HookResponseMessageSchema = Type.Object(
-    {
-        hookCorrelationId: Type.String(),
-        outcome: Type.Union([
-            Type.Literal("continue"),
-            Type.Literal("cancel"),
-            Type.Literal("cancel_with_result"),
-            Type.Literal("failed"),
-        ]),
-        modifiedArgs: Type.Optional(Type.String()),
-        cancelResult: Type.Optional(Type.String()),
-        rollbackData: Type.Optional(Type.String()),
-        modifiedResult: Type.Optional(Type.String()),
-        returnedArgs: Type.Optional(Type.String()),
-        error: Type.Optional(Type.String()),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
-);
-
-export type HookInvokeMessage = Static<typeof HookInvokeMessageSchema>;
-export type HookResponseMessage = Static<typeof HookResponseMessageSchema>;

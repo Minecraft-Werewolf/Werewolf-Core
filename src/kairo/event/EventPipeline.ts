@@ -1,25 +1,30 @@
-import { compile, safeJsonParse } from "@kairo-js/utils";
 import type { KairoRuntime } from "../../minecraft/KairoRuntime";
 import type { KairoWorldState } from "../activation/types/world";
 import { AddonState } from "../activation/types/state";
 import type { KairoRegistryWithManifest } from "../KairoRegistryIndex";
 import type { Disposable } from "@kairo-js/router";
-import { Type, type Static } from "@sinclair/typebox";
+import { safeJsonParse } from "../utils/json";
+import { createValidator, hasOnlyKeys, isInteger, isObject } from "../utils/validate";
 
-const EventEmitMessageSchema = Type.Object(
-    {
-        emitterAddonId: Type.String(),
-        eventName: Type.String(),
-        payload: Type.String(),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
+type EventEmitMessage = {
+    readonly emitterAddonId: string;
+    readonly eventName: string;
+    readonly payload: string;
+    readonly timestamp: number;
+};
+
+const validateEventEmitMessage = createValidator<EventEmitMessage>(
+    "EventEmitMessage",
+    (value) =>
+        isObject(value) &&
+        hasOnlyKeys(value, ["emitterAddonId", "eventName", "payload", "timestamp"]) &&
+        typeof value.emitterAddonId === "string" &&
+        typeof value.eventName === "string" &&
+        typeof value.payload === "string" &&
+        isInteger(value.timestamp, 0),
 );
-type EventEmitMessage = Static<typeof EventEmitMessageSchema>;
-const validateEventEmitMessage = compile(EventEmitMessageSchema);
 
 export class EventPipeline implements Disposable {
-    // emitterAddonId → eventName → [subscriberKairoIds]
     private readonly routingTable = new Map<string, Map<string, string[]>>();
     private world?: KairoWorldState;
     private receiver?: Disposable;
@@ -66,24 +71,19 @@ export class EventPipeline implements Disposable {
         try {
             const parsed = safeJsonParse(rawMessage, () => new Error("parse failed"));
             if (!validateEventEmitMessage(parsed)) return;
-            msg = parsed as EventEmitMessage;
+            msg = parsed;
         } catch {
             return;
         }
 
-        const subscribers = this.routingTable
-            .get(msg.emitterAddonId)
-            ?.get(msg.eventName) ?? [];
+        const subscribers = this.routingTable.get(msg.emitterAddonId)?.get(msg.eventName) ?? [];
 
         for (const subscriberKairoId of subscribers) {
             const rt = world.runtimes.get(subscriberKairoId);
             if (rt?.state !== AddonState.ACTIVE) continue;
 
             try {
-                this.runtime.send(
-                    `${subscriberKairoId}:event-deliver`,
-                    rawMessage,
-                );
+                this.runtime.send(`${subscriberKairoId}:event-deliver`, rawMessage);
             } catch {}
         }
     }

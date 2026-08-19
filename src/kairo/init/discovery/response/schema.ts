@@ -1,11 +1,15 @@
-import { type Static, Type } from "@sinclair/typebox";
+import { createValidator, hasOnlyKeys, isInteger, isObject } from "../../../utils/validate";
 
-export const DiscoveryResponseSchema = Type.Object(
-    {
-        kairoId: Type.String(),
-        timestamp: Type.Integer({ minimum: 0 }),
-    },
-    { additionalProperties: false },
+export type DiscoveryResponse = {
+    readonly kairoId: string;
+    readonly timestamp: number;
+};
+
+export const validateDiscoveryResponse = createValidator<DiscoveryResponse>(
+    "DiscoveryResponse",
+    (value) =>
+        isObject(value) &&
+        hasOnlyKeys(value, ["kairoId", "timestamp"]) &&
+        typeof value.kairoId === "string" &&
+        isInteger(value.timestamp, 0),
 );
-
-export type DiscoveryResponse = Static<typeof DiscoveryResponseSchema>;

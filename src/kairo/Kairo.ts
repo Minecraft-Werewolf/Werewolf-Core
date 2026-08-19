@@ -1,6 +1,5 @@
 import { type Disposable, type KairoCommandOrigin, KairoRouter, router } from "@kairo-js/router";
 import { buildSessionPayload, parseSession, saveSession } from "./session/SessionStorage";
-import { SeedRandom, SemVerUtils } from "@kairo-js/utils";
 import type { AddonProperties } from "@kairo-js/properties";
 import {
     CommandPermissionLevel,
@@ -28,10 +27,15 @@ import { HandoffOrchestrator } from "./handoff/HandoffOrchestrator";
 import { HandoffReceiver } from "./handoff/HandoffReceiver";
 import { StandbyRegistry } from "./handoff/StandbyRegistry";
 import { ApiManifestController } from "./init/api/ApiManifestController";
-import { CommandManifestController, type CommandDeclarationEntry } from "./init/command/CommandManifestController";
+import {
+    CommandManifestController,
+    type CommandDeclarationEntry,
+} from "./init/command/CommandManifestController";
 import { KairoInitEventId } from "./init/constants/KairoInitEventId";
 import { COMMAND_INVOKE_EVENT, COMMAND_ROUTED_EVENT } from "@kairo-js/router";
 import { ModalFormData } from "@minecraft/server-ui";
+import { MathRandom } from "./utils/random";
+import { SemVerUtils } from "./utils/semver";
 
 // Set to false in test/standby packs so they don't conflict with the primary pack's command registration
 const REGISTER_COMMANDS = true;
@@ -64,11 +68,7 @@ class Kairo {
     private readonly notifiedCommandConflictKeys = new Set<string>();
 
     readonly api = {
-        hook: (
-            targetAddonId: string,
-            apiName: string,
-            options: KairoHookOptions,
-        ): void => {
+        hook: (targetAddonId: string, apiName: string, options: KairoHookOptions): void => {
             this.kairoHookRegistry.hook(targetAddonId, apiName, options);
         },
     };
@@ -93,7 +93,7 @@ class Kairo {
 
         const initializer = new KairoInitializer(
             this.runtime,
-            new SeedRandom(),
+            new MathRandom(),
             this.registryIndex,
             properties.header.version,
             this.onInitComplete,
@@ -110,53 +110,77 @@ class Kairo {
         });
 
         const shouldRegisterCommands = REGISTER_COMMANDS;
-        if (shouldRegisterCommands) this.router.beforeEvents.startup.subscribe((ev) => {
-            ev.customCommandRegistry.registerEnum("kairo:addons_subcommand", [
-                "list",
-                "open",
-                "enable",
-                "disable",
-                "status",
-            ]);
-            ev.customCommandRegistry.registerCommand(
-                {
-                    name: "kairo:addons",
-                    description: "Manages Kairo addons",
-                    cheatsRequired: false,
-                    permissionLevel: CommandPermissionLevel.GameDirectors,
-                    mandatoryParameters: [
-                        { name: "kairo:addons_subcommand", type: CustomCommandParamType.Enum },
-                    ],
-                    optionalParameters: [
-                        { name: "addonId", type: CustomCommandParamType.String },
-                        { name: "versionOrFlag", type: CustomCommandParamType.String },
-                        { name: "version", type: CustomCommandParamType.String },
-                    ],
-                },
-                (origin: KairoCommandOrigin, subcommand: string, addonId?: string, versionOrFlag?: string, version?: string) => {                    if (subcommand === "disable" && addonId === "kairo") {
-                        return {
-                            status: CustomCommandStatus.Failure,
-                            message: "Kairo cannot be disabled. Use 'enable' to switch versions.",
-                        };
-                    }
-                    const player = playerFromOrigin(origin);
-                    if (this.isHost) {                        system.run(() => {
-                            this.dispatchCommand(subcommand, addonId, versionOrFlag, version, player);
-                        });
-                    } else {
-                        const playerName = player?.name ?? "";
-                        const senderKairoId = this.router.getKairoId() ?? "";                        system.run(() => {
-                            this.runtime?.send(
-                                Kairo.COMMAND_FORWARD_EVENT,
-                                JSON.stringify({ sub: subcommand, aid: addonId, vof: versionOrFlag, ver: version, pn: playerName, sender: senderKairoId }),
-                            );
-                        });
-                    }
-                    return { status: CustomCommandStatus.Success };
-                },
-                { runWhenInactive: true },
-            );
-        });
+        if (shouldRegisterCommands)
+            this.router.beforeEvents.startup.subscribe((ev) => {
+                ev.customCommandRegistry.registerEnum("kairo:addons_subcommand", [
+                    "list",
+                    "open",
+                    "enable",
+                    "disable",
+                    "status",
+                ]);
+                ev.customCommandRegistry.registerCommand(
+                    {
+                        name: "kairo:addons",
+                        description: "Manages Kairo addons",
+                        cheatsRequired: false,
+                        permissionLevel: CommandPermissionLevel.GameDirectors,
+                        mandatoryParameters: [
+                            { name: "kairo:addons_subcommand", type: CustomCommandParamType.Enum },
+                        ],
+                        optionalParameters: [
+                            { name: "addonId", type: CustomCommandParamType.String },
+                            { name: "versionOrFlag", type: CustomCommandParamType.String },
+                            { name: "version", type: CustomCommandParamType.String },
+                        ],
+                    },
+                    (
+                        origin: KairoCommandOrigin,
+                        subcommand: string,
+                        addonId?: string,
+                        versionOrFlag?: string,
+                        version?: string,
+                    ) => {
+                        if (subcommand === "disable" && addonId === "kairo") {
+                            return {
+                                status: CustomCommandStatus.Failure,
+                                message:
+                                    "Kairo cannot be disabled. Use 'enable' to switch versions.",
+                            };
+                        }
+                        const player = playerFromOrigin(origin);
+                        if (this.isHost) {
+                            system.run(() => {
+                                this.dispatchCommand(
+                                    subcommand,
+                                    addonId,
+                                    versionOrFlag,
+                                    version,
+                                    player,
+                                );
+                            });
+                        } else {
+                            const playerName = player?.name ?? "";
+                            const senderKairoId = this.router.getKairoId() ?? "";
+                            system.run(() => {
+                                this.runtime?.send(
+                                    Kairo.COMMAND_FORWARD_EVENT,
+                                    JSON.stringify({
+                                        sub: subcommand,
+                                        aid: addonId,
+                                        vof: versionOrFlag,
+                                        ver: version,
+                                        pn: playerName,
+                                        sender: senderKairoId,
+                                    }),
+                                );
+                            });
+                        }
+                        return { status: CustomCommandStatus.Success };
+                    },
+                    { runWhenInactive: true },
+                );
+            });
     }
 
     openUI(player: Player): void {
@@ -171,24 +195,31 @@ class Kairo {
     }[] {
         if (!this.activationController) return [];
         const world = this.activationController.world;
-        return [...world.addonIdIndex.entries()].map(([addonId, kairoIds]) => {
-            let state: "active" | "inactive" | "unresolved" = "unresolved";
-            let name = addonId;
-            let version: string | undefined;
-            for (const id of kairoIds) {
-                const runtime = world.runtimes.get(id);
-                const registry = world.registries.get(id);
-                if (registry) name = registry.name;
-                if (runtime?.state === AddonState.ACTIVE && registry) {
-                    return { addonId, name, version: SemVerUtils.format(registry.version), state: "active" as const };
+        return [...world.addonIdIndex.entries()]
+            .map(([addonId, kairoIds]) => {
+                let state: "active" | "inactive" | "unresolved" = "unresolved";
+                let name = addonId;
+                let version: string | undefined;
+                for (const id of kairoIds) {
+                    const runtime = world.runtimes.get(id);
+                    const registry = world.registries.get(id);
+                    if (registry) name = registry.name;
+                    if (runtime?.state === AddonState.ACTIVE && registry) {
+                        return {
+                            addonId,
+                            name,
+                            version: SemVerUtils.format(registry.version),
+                            state: "active" as const,
+                        };
+                    }
+                    if (runtime?.state === AddonState.INACTIVE) {
+                        state = "inactive";
+                        if (registry) version = SemVerUtils.format(registry.version);
+                    }
                 }
-                if (runtime?.state === AddonState.INACTIVE) {
-                    state = "inactive";
-                    if (registry) version = SemVerUtils.format(registry.version);
-                }
-            }
-            return { addonId, name, version, state };
-        }).sort((a, b) => a.addonId.localeCompare(b.addonId));
+                return { addonId, name, version, state };
+            })
+            .sort((a, b) => a.addonId.localeCompare(b.addonId));
     }
 
     private commandList(player: Player): void {
@@ -270,7 +301,7 @@ class Kairo {
                 lines.push(`  §a${ver} — ACTIVE`);
             } else if (rt.state === AddonState.INACTIVE) {
                 const reasons = [...rt.inactiveReasons.keys()]
-                    .filter(reason => reason !== InactiveReasonCode.ADDON_ID_CONFLICT)
+                    .filter((reason) => reason !== InactiveReasonCode.ADDON_ID_CONFLICT)
                     .join(", ");
                 lines.push(`  §e${ver} — INACTIVE${reasons ? ` §7(${reasons})` : ""}`);
             } else {
@@ -281,7 +312,12 @@ class Kairo {
         player.sendMessage(lines.join("\n"));
     }
 
-    private async commandEnable(addonId: string, versionStr?: string, flag?: string, player?: Player): Promise<void> {
+    private async commandEnable(
+        addonId: string,
+        versionStr?: string,
+        flag?: string,
+        player?: Player,
+    ): Promise<void> {
         if (!this.activationController) return;
 
         if (addonId === "kairo") {
@@ -312,7 +348,9 @@ class Kairo {
 
         if (!newKairoId) {
             if (versionStr) {
-                player?.sendMessage(`§c[Kairo] §rVersion §e${versionStr}§r of §e${addonId}§c not found.`);
+                player?.sendMessage(
+                    `§c[Kairo] §rVersion §e${versionStr}§r of §e${addonId}§c not found.`,
+                );
             } else {
                 player?.sendMessage(`§c[Kairo] §rNo activatable version of §e${addonId}§c found.`);
             }
@@ -327,14 +365,17 @@ class Kairo {
         // ── Version switch path ──────────────────────────────────
         if (currentActiveId) {
             if (enableFlag === "dry") {
-                const { cascadeVictims } = this.activationController.previewVersionSwitch(newKairoId);
+                const { cascadeVictims } =
+                    this.activationController.previewVersionSwitch(newKairoId);
                 const oldReg = world.registries.get(currentActiveId);
                 const newReg = world.registries.get(newKairoId);
                 const oldVer = oldReg ? SemVerUtils.format(oldReg.version) : currentActiveId;
                 const newVer = newReg ? SemVerUtils.format(newReg.version) : newKairoId;
-                const lines = [`§b[Kairo] §rDry run — §e${addonId}§r: would switch §a${oldVer} §7→ §a${newVer}`];
+                const lines = [
+                    `§b[Kairo] §rDry run — §e${addonId}§r: would switch §a${oldVer} §7→ §a${newVer}`,
+                ];
                 if (cascadeVictims.length > 0) {
-                    const victims = cascadeVictims.map(id => {
+                    const victims = cascadeVictims.map((id) => {
                         const r = world.registries.get(id);
                         return r ? `§e${r.addonId}@${SemVerUtils.format(r.version)}§r` : id;
                     });
@@ -342,17 +383,20 @@ class Kairo {
                 }
                 player?.sendMessage(lines.join("\n"));
             } else {
-                const { cascadeVictims } = this.activationController.previewVersionSwitch(newKairoId);
+                const { cascadeVictims } =
+                    this.activationController.previewVersionSwitch(newKairoId);
                 await this.activationController.executeVersionSwitch(currentActiveId, newKairoId);
                 const reg = world.registries.get(newKairoId);
                 const ver = reg ? SemVerUtils.format(reg.version) : newKairoId;
                 player?.sendMessage(`§b[Kairo] §r${addonId} ${ver} enabled`);
                 if (cascadeVictims.length > 0) {
-                    const victims = cascadeVictims.map(id => {
+                    const victims = cascadeVictims.map((id) => {
                         const r = world.registries.get(id);
                         return r ? `§e${r.addonId}@${SemVerUtils.format(r.version)}§r` : id;
                     });
-                    player?.sendMessage(`§7[Kairo] Deactivated by version switch: ${victims.join(", ")}`);
+                    player?.sendMessage(
+                        `§7[Kairo] Deactivated by version switch: ${victims.join(", ")}`,
+                    );
                 }
             }
             return;
@@ -361,26 +405,27 @@ class Kairo {
         // ── Enable path ──────────────────────────────────────────
         const rt = world.runtimes.get(newKairoId);
         if (rt?.state === AddonState.UNRESOLVED) {
-            const reasons = [...rt.unresolvedReasons.values()].map(r => r.message).join(", ");
+            const reasons = [...rt.unresolvedReasons.values()].map((r) => r.message).join(", ");
             player?.sendMessage(`§c[Kairo] §rCannot enable §e${addonId}§c: ${reasons}`);
             return;
         }
 
-        const { plan, toActivate, implicitVersionSwitches } = this.activationController.previewEnable(newKairoId);
-        const extraDeps = toActivate.filter(id => id !== newKairoId);
+        const { plan, toActivate, implicitVersionSwitches } =
+            this.activationController.previewEnable(newKairoId);
+        const extraDeps = toActivate.filter((id) => id !== newKairoId);
         const needsConfirmation = extraDeps.length > 0 || implicitVersionSwitches.length > 0;
 
-        const kairoSwitch = implicitVersionSwitches.find(({ to }) => world.registries.get(to)?.addonId === "kairo");
+        const kairoSwitch = implicitVersionSwitches.find(
+            ({ to }) => world.registries.get(to)?.addonId === "kairo",
+        );
         if (enableFlag === "force" && kairoSwitch) {
             const target = world.registries.get(kairoSwitch.to);
             if (target) {
-                this.startVersionSwitch(
-                    kairoSwitch.to,
-                    target.version,
+                this.startVersionSwitch(kairoSwitch.to, target.version, origin, player, {
+                    addonId,
+                    kairoId: newKairoId,
                     origin,
-                    player,
-                    { addonId, kairoId: newKairoId, origin },
-                );
+                });
                 return;
             }
         }
@@ -390,7 +435,7 @@ class Kairo {
             const ver = reg ? SemVerUtils.format(reg.version) : newKairoId;
             const lines = [`§b[Kairo] §rDry run — would enable §e${addonId} ${ver}§r`];
             if (toActivate.length > 0) {
-                const activate = toActivate.map(id => {
+                const activate = toActivate.map((id) => {
                     const r = world.registries.get(id);
                     return r ? `§a${r.addonId}@${SemVerUtils.format(r.version)}§r` : id;
                 });
@@ -409,7 +454,12 @@ class Kairo {
         }
 
         if (enableFlag === "force" || !needsConfirmation) {
-            await this.activationController.executeEnableWithPlan(newKairoId, origin, plan, implicitVersionSwitches);
+            await this.activationController.executeEnableWithPlan(
+                newKairoId,
+                origin,
+                plan,
+                implicitVersionSwitches,
+            );
             const reg = world.registries.get(newKairoId);
             const ver = reg ? SemVerUtils.format(reg.version) : newKairoId;
             player?.sendMessage(`§b[Kairo] §r${addonId} ${ver} enabled`);
@@ -422,7 +472,7 @@ class Kairo {
             const ver = reg ? SemVerUtils.format(reg.version) : newKairoId;
             const confirmLines = [`Enable §e${addonId} ${ver}§r?`];
             if (extraDeps.length > 0) {
-                const deps = extraDeps.map(id => {
+                const deps = extraDeps.map((id) => {
                     const r = world.registries.get(id);
                     return r ? `${r.addonId}@${SemVerUtils.format(r.version)}` : id;
                 });
@@ -446,29 +496,43 @@ class Kairo {
             const response = await form.show(player);
             if (response.canceled || !response.formValues?.[0]) return;
 
-            await this.activationController.executeEnableWithPlan(newKairoId, origin, plan, implicitVersionSwitches);
+            await this.activationController.executeEnableWithPlan(
+                newKairoId,
+                origin,
+                plan,
+                implicitVersionSwitches,
+            );
             player.sendMessage(`§b[Kairo] §r${addonId} ${ver} enabled`);
             return;
         }
 
         // No flag, needs confirmation → error
         if (extraDeps.length > 0) {
-            const deps = extraDeps.map(id => {
-                const r = world.registries.get(id);
-                return r ? `§e${r.addonId}§r` : id;
-            }).join(", ");
-            player?.sendMessage(`§c[Kairo] §rCannot enable §e${addonId}§c — inactive dependencies: ${deps}\n§7Use §f-force§7 or §f-confirm§7.`);
+            const deps = extraDeps
+                .map((id) => {
+                    const r = world.registries.get(id);
+                    return r ? `§e${r.addonId}§r` : id;
+                })
+                .join(", ");
+            player?.sendMessage(
+                `§c[Kairo] §rCannot enable §e${addonId}§c — inactive dependencies: ${deps}\n§7Use §f-force§7 or §f-confirm§7.`,
+            );
         } else {
-            const switches = implicitVersionSwitches.map(({ from }) => {
-                const r = world.registries.get(from);
-                return r ? `§e${r.addonId}§r` : from;
-            }).join(", ");
-            player?.sendMessage(`§c[Kairo] §rEnabling §e${addonId}§c requires version switch on: ${switches}\n§7Use §f-force§7 or §f-confirm§7.`);
+            const switches = implicitVersionSwitches
+                .map(({ from }) => {
+                    const r = world.registries.get(from);
+                    return r ? `§e${r.addonId}§r` : from;
+                })
+                .join(", ");
+            player?.sendMessage(
+                `§c[Kairo] §rEnabling §e${addonId}§c requires version switch on: ${switches}\n§7Use §f-force§7 or §f-confirm§7.`,
+            );
         }
     }
 
     private commandEnableKairo(versionStr?: string, player?: Player): void {
-        if (!this.activationController) return;        if (this.isSwitching) {
+        if (!this.activationController) return;
+        if (this.isSwitching) {
             player?.sendMessage("§c[Kairo] §rVersion switch already in progress. Please wait.");
             return;
         }
@@ -476,7 +540,11 @@ class Kairo {
         const ownKairoId = this.router.getKairoId();
         const currentKairoIds = this.activationController.world.addonIdIndex.get("kairo");
         const currentActiveId = currentKairoIds
-            ? [...currentKairoIds].find((id) => this.activationController?.world.runtimes.get(id)?.state === AddonState.ACTIVE)
+            ? [...currentKairoIds].find(
+                  (id) =>
+                      this.activationController?.world.runtimes.get(id)?.state ===
+                      AddonState.ACTIVE,
+              )
             : undefined;
         if (versionStr && currentActiveId) {
             const currentRegistry = this.activationController.world.registries.get(currentActiveId);
@@ -494,8 +562,15 @@ class Kairo {
             standbyEntry = undefined;
         }
 
-        if (standbyEntry) {            this.startVersionSwitch(standbyEntry.kairoId, standbyEntry.version, versionStr ? "explicit" : "latest", player);
-        } else {            // Fallback: save preference for next reload
+        if (standbyEntry) {
+            this.startVersionSwitch(
+                standbyEntry.kairoId,
+                standbyEntry.version,
+                versionStr ? "explicit" : "latest",
+                player,
+            );
+        } else {
+            // Fallback: save preference for next reload
             const world = this.activationController.world;
 
             let targetKairoId: string | undefined;
@@ -503,10 +578,12 @@ class Kairo {
 
             if (versionStr) {
                 const kairoIds = world.addonIdIndex.get("kairo");
-                targetKairoId = kairoIds ? [...kairoIds].find((id) => {
-                    const reg = world.registries.get(id);
-                    return reg ? SemVerUtils.format(reg.version) === versionStr : false;
-                }) : undefined;
+                targetKairoId = kairoIds
+                    ? [...kairoIds].find((id) => {
+                          const reg = world.registries.get(id);
+                          return reg ? SemVerUtils.format(reg.version) === versionStr : false;
+                      })
+                    : undefined;
                 origin = "explicit";
             } else {
                 const resolved = this.activationController.resolveLatestKairoId("kairo");
@@ -524,7 +601,9 @@ class Kairo {
             this.activationController.saveKairoVersionPreference(targetKairoId, origin);
             const reg = world.registries.get(targetKairoId);
             const ver = reg ? SemVerUtils.format(reg.version) : targetKairoId;
-            player?.sendMessage(`§e[Kairo] §rKairo ${ver} is not available for live switch. Will activate on next world reload.`);
+            player?.sendMessage(
+                `§e[Kairo] §rKairo ${ver} is not available for live switch. Will activate on next world reload.`,
+            );
             player?.playSound("random.orb");
         }
     }
@@ -539,7 +618,8 @@ class Kairo {
         if (!this.apiPipeline || !this.activationController) return;
 
         this.isSwitching = true;
-        const ver = SemVerUtils.format({ ...targetVersion, prerelease: undefined });        player?.sendMessage(`§b[Kairo] §rSwitching to Kairo ${ver}...`);
+        const ver = SemVerUtils.format({ ...targetVersion, prerelease: undefined });
+        player?.sendMessage(`§b[Kairo] §rSwitching to Kairo ${ver}...`);
 
         // Save the session preference via a direct ScriptEvent to kairo-database's
         // bootstrap listener. router.save() goes through the API pipeline which will
@@ -548,7 +628,10 @@ class Kairo {
         const switchTargetRegistry = this.activationController.world.registries.get(targetKairoId);
         if (switchTargetRegistry && this.runtime) {
             const updatedSession = new Map(this.activationController.world.previousSession);
-            updatedSession.set(switchTargetRegistry.addonId, { version: switchTargetRegistry.version, origin });
+            updatedSession.set(switchTargetRegistry.addonId, {
+                version: switchTargetRegistry.version,
+                origin,
+            });
             this.runtime.send(KairoInitEventId.SessionSave, buildSessionPayload(updatedSession));
         }
 
@@ -577,7 +660,9 @@ class Kairo {
             () => {
                 // Handoff failed — rolled back
                 this.isSwitching = false;
-                player?.sendMessage(`§c[Kairo] §rSwitch to Kairo ${ver} failed. Staying on current version.`);
+                player?.sendMessage(
+                    `§c[Kairo] §rSwitch to Kairo ${ver} failed. Staying on current version.`,
+                );
             },
             this.commandManifestController,
             this.commandRegistrars,
@@ -588,9 +673,9 @@ class Kairo {
             origin,
             pendingActivation
                 ? {
-                    ...pendingActivation,
-                    ...(player?.name ? { playerName: player.name } : {}),
-                }
+                      ...pendingActivation,
+                      ...(player?.name ? { playerName: player.name } : {}),
+                  }
                 : undefined,
         );
     }
@@ -610,7 +695,14 @@ class Kairo {
         await this.activationController.executeDisable(activeId);
     }
 
-    private dispatchCommand(subcommand: string, addonId?: string, versionOrFlag?: string, version?: string, player?: Player): void {        if (subcommand === "list") {
+    private dispatchCommand(
+        subcommand: string,
+        addonId?: string,
+        versionOrFlag?: string,
+        version?: string,
+        player?: Player,
+    ): void {
+        if (subcommand === "list") {
             if (player) this.commandList(player);
         } else if (subcommand === "open") {
             if (this.ui && player) {
@@ -629,7 +721,8 @@ class Kairo {
     }
 
     private startCommandForwardListener(): void {
-        const ownKairoId = this.router.getKairoId() ?? "";        this.commandForwardListener?.dispose();
+        const ownKairoId = this.router.getKairoId() ?? "";
+        this.commandForwardListener?.dispose();
         this.commandForwardListener = this.runtime?.receive((id, message) => {
             if (id !== Kairo.COMMAND_FORWARD_EVENT) return;
             try {
@@ -640,10 +733,11 @@ class Kairo {
                     ver?: string;
                     pn?: string;
                     sender?: string;
-                };                if (data.sender && data.sender === ownKairoId) return;
+                };
+                if (data.sender && data.sender === ownKairoId) return;
                 system.run(() => {
                     const player = data.pn
-                        ? world.getPlayers().find(p => p.name === data.pn)
+                        ? world.getPlayers().find((p) => p.name === data.pn)
                         : undefined;
                     this.dispatchCommand(data.sub, data.aid, data.vof, data.ver, player);
                 });
@@ -651,15 +745,18 @@ class Kairo {
         });
     }
 
-    private startUIOpenListener(): void {        this.uiOpenListener?.dispose();
+    private startUIOpenListener(): void {
+        this.uiOpenListener?.dispose();
         this.uiOpenListener = this.runtime?.receive((id, playerName) => {
-            if (id !== Kairo.UI_OPEN_EVENT) return;            if (!this.ui) {
+            if (id !== Kairo.UI_OPEN_EVENT) return;
+            if (!this.ui) {
                 console.warn(`[kairo] UI_OPEN_EVENT: ui is null, ignoring`);
                 return;
             }
             system.run(() => {
                 const players = world.getPlayers();
-                const p = players.find(pl => pl.name === playerName);                if (p && this.ui) void this.ui.open(p);
+                const p = players.find((pl) => pl.name === playerName);
+                if (p && this.ui) void this.ui.open(p);
             });
         });
     }
@@ -670,14 +767,26 @@ class Kairo {
             (targetKairoId, origin, player, pendingActivation) => {
                 const entry = this.standbyRegistry.findByKairoId(targetKairoId);
                 if (!entry) return false;
-                this.startVersionSwitch(targetKairoId, entry.version, origin, player, pendingActivation);
+                this.startVersionSwitch(
+                    targetKairoId,
+                    entry.version,
+                    origin,
+                    player,
+                    pendingActivation,
+                );
                 return true;
             },
         );
     }
 
     pushDelegatableUpdates(): void {
-        if (!this.commandManifestController || !this.commandRegistrars || !this.runtime || !this.activationController) return;
+        if (
+            !this.commandManifestController ||
+            !this.commandRegistrars ||
+            !this.runtime ||
+            !this.activationController
+        )
+            return;
 
         const world = this.activationController.world;
         const getActiveKairoId = (addonId: string): string | undefined => {
@@ -700,7 +809,8 @@ class Kairo {
                 registrarKairoId,
                 this.registryIndex,
                 getActiveKairoId,
-            );            this.runtime.send(
+            );
+            this.runtime.send(
                 KairoInitEventId.CommandDelegatableUpdate,
                 JSON.stringify({
                     targetKairoId: registrarKairoId,
@@ -718,8 +828,9 @@ class Kairo {
         if (conflicts.length === 0) return;
 
         const registryName = (kairoId: string): string => {
-            const registry = this.activationController?.world.registries.get(kairoId)
-                ?? this.registryIndex.getAll().find(r => r.kairoId === kairoId);
+            const registry =
+                this.activationController?.world.registries.get(kairoId) ??
+                this.registryIndex.getAll().find((r) => r.kairoId === kairoId);
             if (!registry) return kairoId;
             return `${registry.name}@${SemVerUtils.format(registry.version)}`;
         };
@@ -731,8 +842,8 @@ class Kairo {
             this.notifiedCommandConflictKeys.add(key);
             lines.push(
                 `§c- ${conflict.commandName}§r: ` +
-                `${registryName(conflict.registrarKairoId)} (${conflict.registrarSignature}) vs ` +
-                `${registryName(conflict.otherKairoId)} (${conflict.otherSignature})`,
+                    `${registryName(conflict.registrarKairoId)} (${conflict.registrarSignature}) vs ` +
+                    `${registryName(conflict.otherKairoId)} (${conflict.otherSignature})`,
             );
         }
         if (lines.length === 0) return;
@@ -751,7 +862,8 @@ class Kairo {
     }
 
     private startCommandInvokeListener(): void {
-        if (!this.runtime) return;        this.commandInvokeListener?.dispose();
+        if (!this.runtime) return;
+        this.commandInvokeListener?.dispose();
         this.commandInvokeListener = this.runtime.receive((id, message) => {
             if (id !== COMMAND_INVOKE_EVENT) return;
             try {
@@ -760,7 +872,8 @@ class Kairo {
                     commandName: string;
                     origin: unknown;
                     args: unknown[];
-                };                if (typeof payload.addonId !== "string") return;
+                };
+                if (typeof payload.addonId !== "string") return;
 
                 const world = this.activationController?.world;
                 if (!world) return;
@@ -774,7 +887,8 @@ class Kairo {
                         break;
                     }
                 }
-                if (!targetKairoId) return;                this.runtime!.send(
+                if (!targetKairoId) return;
+                this.runtime!.send(
                     COMMAND_ROUTED_EVENT,
                     JSON.stringify({
                         targetKairoId,
@@ -796,11 +910,13 @@ class Kairo {
         this.uiOpenListener = undefined;
     }
 
-    private enterStandbyMode(reason: string): void {        this.router.onceRegistered((ownKairoId) => {
+    private enterStandbyMode(reason: string): void {
+        this.router.onceRegistered((ownKairoId) => {
             if (!this.runtime || !this.properties) return;
 
             const version = this.properties.header.version;
-            const verStr = SemVerUtils.format(version);            this.runtime.send(
+            const verStr = SemVerUtils.format(version);
+            this.runtime.send(
                 HandoffEventId.StandbyReady,
                 JSON.stringify({
                     kairoId: ownKairoId,
@@ -823,11 +939,12 @@ class Kairo {
         });
     }
 
-    private readonly onElectionLost = (): void => {        this.router.onceRegistered((ownKairoId) => {
+    private readonly onElectionLost = (): void => {
+        this.router.onceRegistered((ownKairoId) => {
             if (!this.runtime || !this.properties) return;
 
             const version = this.properties.header.version;
-            const verStr = SemVerUtils.format(version);            // Announce standby availability to the host
+            const verStr = SemVerUtils.format(version); // Announce standby availability to the host
             this.runtime.send(
                 HandoffEventId.StandbyReady,
                 JSON.stringify({
@@ -858,7 +975,8 @@ class Kairo {
                 version: { ma: number; mi: number; p: number; pre?: string };
             };
             if (typeof data.kairoId !== "string") return;
-            if (data.kairoId === this.router.getKairoId()) {                return;
+            if (data.kairoId === this.router.getKairoId()) {
+                return;
             }
             const version = {
                 major: data.version.ma,
@@ -866,7 +984,8 @@ class Kairo {
                 patch: data.version.p,
                 ...(data.version.pre !== undefined ? { prerelease: data.version.pre } : {}),
             };
-            this.standbyRegistry.record(data.kairoId, version);        } catch {}
+            this.standbyRegistry.record(data.kairoId, version);
+        } catch {}
     }
 
     private readonly onHandoffReceived = (payload: HandoffPayload): void => {
@@ -922,16 +1041,19 @@ class Kairo {
         // Restore command routing infrastructure from handoff payload
         const cmdController = new CommandManifestController();
         for (const entry of payload.commandManifests ?? []) {
-            cmdController.handleManifest(entry.kairoId, [...entry.commands] as CommandDeclarationEntry[]);
+            cmdController.handleManifest(entry.kairoId, [
+                ...entry.commands,
+            ] as CommandDeclarationEntry[]);
         }
         this.commandManifestController = cmdController;
         this.commandRegistrars = new Map(
-            (payload.commandRegistrars ?? []).map(r => [r.name, r.registrarKairoId]),
+            (payload.commandRegistrars ?? []).map((r) => [r.name, r.registrarKairoId]),
         );
         this.startCommandInvokeListener();
         this.startCommandForwardListener();
 
-        this.isHost = true;        this.notifyCommandSyntaxConflicts();
+        this.isHost = true;
+        this.notifyCommandSyntaxConflicts();
 
         // Flush any standby-ready messages received before we became host
         for (const msg of this.pendingStandbyMessages) {
@@ -952,7 +1074,8 @@ class Kairo {
         // router.save() would fail here because the router is INACTIVE (ADDON_ID_CONFLICT
         // until registration completes), so we use a direct ScriptEvent to the bootstrap
         // listener in kairo-database which is always active.
-        this.runtime.send(KairoInitEventId.SessionSave, buildSessionPayload(world.previousSession));    };
+        this.runtime.send(KairoInitEventId.SessionSave, buildSessionPayload(world.previousSession));
+    };
 
     private async resumePendingActivation(pending: HandoffPendingActivation): Promise<void> {
         if (!this.activationController) return;
@@ -960,11 +1083,13 @@ class Kairo {
         const worldState = this.activationController.world;
         const registry = worldState.registries.get(pending.kairoId);
         const player = pending.playerName
-            ? world.getPlayers().find(p => p.name === pending.playerName)
+            ? world.getPlayers().find((p) => p.name === pending.playerName)
             : undefined;
 
         if (!registry) {
-            player?.sendMessage(`§c[Kairo] §rCannot resume activation for §e${pending.addonId}§c: target not found.`);
+            player?.sendMessage(
+                `§c[Kairo] §rCannot resume activation for §e${pending.addonId}§c: target not found.`,
+            );
             return;
         }
 
@@ -974,21 +1099,33 @@ class Kairo {
             const runtime = worldState.runtimes.get(pending.kairoId);
             if (runtime?.state !== AddonState.ACTIVE) {
                 const reasons = runtime
-                    ? [...runtime.inactiveReasons.keys(), ...runtime.unresolvedReasons.keys()].join(", ")
+                    ? [...runtime.inactiveReasons.keys(), ...runtime.unresolvedReasons.keys()].join(
+                          ", ",
+                      )
                     : "missing runtime";
-                console.warn(`[kairo] pending activation did not become active addonId=${pending.addonId} kairoId=${pending.kairoId} state=${runtime?.state ?? "<missing>"} reasons=${reasons || "<none>"}`);
-                player?.sendMessage(`§c[Kairo] §rFailed to enable §e${pending.addonId}§c after Kairo switch: ${reasons || "unknown reason"}.`);
+                console.warn(
+                    `[kairo] pending activation did not become active addonId=${pending.addonId} kairoId=${pending.kairoId} state=${runtime?.state ?? "<missing>"} reasons=${reasons || "<none>"}`,
+                );
+                player?.sendMessage(
+                    `§c[Kairo] §rFailed to enable §e${pending.addonId}§c after Kairo switch: ${reasons || "unknown reason"}.`,
+                );
                 this.pushDelegatableUpdates();
                 return;
             }
 
             this.pushDelegatableUpdates();
-            player?.sendMessage(`§b[Kairo] §r${registry.name} §a${SemVerUtils.format(registry.version)}§r enabled`);
+            player?.sendMessage(
+                `§b[Kairo] §r${registry.name} §a${SemVerUtils.format(registry.version)}§r enabled`,
+            );
             player?.playSound("random.orb");
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            console.warn(`[kairo] pending activation failed addonId=${pending.addonId} kairoId=${pending.kairoId}: ${message}`);
-            player?.sendMessage(`§c[Kairo] §rFailed to enable §e${pending.addonId}§c after Kairo switch.`);
+            console.warn(
+                `[kairo] pending activation failed addonId=${pending.addonId} kairoId=${pending.kairoId}: ${message}`,
+            );
+            player?.sendMessage(
+                `§c[Kairo] §rFailed to enable §e${pending.addonId}§c after Kairo switch.`,
+            );
         }
     }
 
@@ -1024,7 +1161,8 @@ class Kairo {
         world.previousSession.set("kairo", {
             version: ownRegistry.version,
             origin: existingSession?.origin ?? "explicit",
-        });    }
+        });
+    }
 
     private syncKairoSessionAfterStartup(): void {
         if (!this.activationController) return;
@@ -1068,7 +1206,8 @@ class Kairo {
             origin: existingSession.origin,
             ...(existingSession.disabled ? { disabled: true as const } : {}),
         });
-        saveSession(world.previousSession);    }
+        saveSession(world.previousSession);
+    }
 
     private readonly onInitComplete = (
         sessionPayload: string | null,
@@ -1112,10 +1251,7 @@ class Kairo {
                 () => ownKairoId,
             );
 
-            this.apiPipeline.initialize(
-                this.registryIndex.getAllWithManifests(),
-                ownKairoId,
-            );
+            this.apiPipeline.initialize(this.registryIndex.getAllWithManifests(), ownKairoId);
 
             this.eventPipeline = new EventPipeline(this.runtime);
             this.eventPipeline.initialize(this.registryIndex.getAllWithManifests());
@@ -1133,7 +1269,8 @@ class Kairo {
             this.ui = this.buildUI(this.activationController);
             this.startUIOpenListener();
 
-            this.isHost = true;            this.notifyCommandSyntaxConflicts();
+            this.isHost = true;
+            this.notifyCommandSyntaxConflicts();
 
             // Flush buffered standby-ready messages received during init
             for (const msg of this.pendingStandbyMessages) {
@@ -1166,9 +1303,15 @@ type EnableFlag = "force" | "confirm" | "dry" | undefined;
 
 function parseEnableFlag(flag: string | undefined): EnableFlag {
     switch (flag) {
-        case "-force": case "-f": return "force";
-        case "-confirm": case "-c": return "confirm";
-        case "-dry": return "dry";
-        default: return undefined;
+        case "-force":
+        case "-f":
+            return "force";
+        case "-confirm":
+        case "-c":
+            return "confirm";
+        case "-dry":
+            return "dry";
+        default:
+            return undefined;
     }
 }

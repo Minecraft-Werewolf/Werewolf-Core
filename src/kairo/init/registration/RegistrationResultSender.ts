@@ -1,4 +1,4 @@
-import { toError } from "@kairo-js/utils";
+import { toError } from "../../utils/error";
 import type { KairoRuntime } from "../../../minecraft/KairoRuntime";
 import { KairoInitEventId } from "../constants/KairoInitEventId";
 import type { KairoRegistryRejectReason } from "../KairoRegistryVerifier";

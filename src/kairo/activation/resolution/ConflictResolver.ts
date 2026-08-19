@@ -1,4 +1,4 @@
-﻿import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "../../utils/semver";
 import type { ResolutionContext } from "../types/context";
 import { AddonState, InactiveReasonCode, type KairoId } from "../types/state";
 import { setInactive } from "../helpers/RuntimeTransition";
@@ -9,12 +9,18 @@ export class ConflictResolver {
             if (group.size <= 1) continue;
 
             // Normalize: if multiple ACTIVE (invariant violation), keep kairoId-alpha winner
-            const activeInGroup = [...group].filter(id => ctx.runtimes.get(id)?.state === AddonState.ACTIVE);
+            const activeInGroup = [...group].filter(
+                (id) => ctx.runtimes.get(id)?.state === AddonState.ACTIVE,
+            );
             if (activeInGroup.length > 1) {
                 const [, ...losers] = activeInGroup.sort();
                 for (const loser of losers) {
                     const rt = ctx.runtimes.get(loser);
-                    if (rt) setInactive(rt, { code: InactiveReasonCode.CASCADE_DEACTIVATED, message: "Invariant: multiple ACTIVE for same addonId" });
+                    if (rt)
+                        setInactive(rt, {
+                            code: InactiveReasonCode.CASCADE_DEACTIVATED,
+                            message: "Invariant: multiple ACTIVE for same addonId",
+                        });
                 }
             }
 
@@ -60,8 +66,8 @@ export class ConflictResolver {
             }
         }
 
-        // Priority 3: previous session latest-origin 竊・use current latest
-        const anyLatest = ids.find(id => {
+        // Priority 3: previous session latest-origin ↁEuse current latest
+        const anyLatest = ids.find((id) => {
             const registry = ctx.registries.get(id);
             if (!registry) return false;
             return ctx.previousSession.get(registry.addonId)?.origin === "latest";
@@ -71,7 +77,7 @@ export class ConflictResolver {
             return this.latestVersionId(ids, addonId, ctx);
         }
 
-        // Priority 4: no previous session 竊・latest
+        // Priority 4: no previous session ↁElatest
         if (ids.length > 0) {
             const addonId = ctx.registries.get(ids[0]!)!.addonId;
             return this.latestVersionId(ids, addonId, ctx);
@@ -82,7 +88,7 @@ export class ConflictResolver {
     }
 
     private latestVersionId(ids: KairoId[], addonId: string, ctx: ResolutionContext): KairoId {
-        const stable = ids.filter(id => {
+        const stable = ids.filter((id) => {
             const r = ctx.registries.get(id);
             return r?.addonId === addonId && !SemVerUtils.isPrerelease(r.version);
         });

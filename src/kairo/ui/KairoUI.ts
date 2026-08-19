@@ -1,5 +1,5 @@
 import { InputPermissionCategory, type Player } from "@minecraft/server";
-import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "../utils/semver";
 import type { ActivationController } from "../activation/ActivationController";
 import { AddonState } from "../activation/types/state";
 import type { KairoWorldState } from "../activation/types/world";
@@ -34,8 +34,12 @@ export class KairoUI {
     ) {}
 
     async open(player: Player): Promise<void> {
-        const wasCameraEnabled = player.inputPermissions.isPermissionCategoryEnabled(InputPermissionCategory.Camera);
-        const wasMovementEnabled = player.inputPermissions.isPermissionCategoryEnabled(InputPermissionCategory.Movement);
+        const wasCameraEnabled = player.inputPermissions.isPermissionCategoryEnabled(
+            InputPermissionCategory.Camera,
+        );
+        const wasMovementEnabled = player.inputPermissions.isPermissionCategoryEnabled(
+            InputPermissionCategory.Movement,
+        );
 
         player.inputPermissions.setPermissionCategory(InputPermissionCategory.Camera, false);
         player.inputPermissions.setPermissionCategory(InputPermissionCategory.Movement, false);
@@ -59,23 +63,43 @@ export class KairoUI {
 
                 while (true) {
                     const detailWorld: KairoWorldState = this.controller.world;
-                    const result = await this.addonDetail.show(player, selectedAddonId, detailWorld, disableAllowed);
+                    const result = await this.addonDetail.show(
+                        player,
+                        selectedAddonId,
+                        detailWorld,
+                        disableAllowed,
+                    );
                     if (!result) break;
 
                     const outcome =
                         result.type === "disable"
                             ? await this.handleDisable(player, selectedAddonId)
                             : selectedAddonId === "kairo"
-                              ? await this.handleKairoVersionSwitch(player, result.kairoId, result.origin)
-                              : await this.handleActivate(player, result.kairoId, result.origin, selectedAddonId);
+                              ? await this.handleKairoVersionSwitch(
+                                    player,
+                                    result.kairoId,
+                                    result.origin,
+                                )
+                              : await this.handleActivate(
+                                    player,
+                                    result.kairoId,
+                                    result.origin,
+                                    selectedAddonId,
+                                );
 
                     if (outcome === "close") return;
                     if (outcome === "done") break;
                 }
             }
         } finally {
-            player.inputPermissions.setPermissionCategory(InputPermissionCategory.Movement, wasMovementEnabled);
-            player.inputPermissions.setPermissionCategory(InputPermissionCategory.Camera, wasCameraEnabled);
+            player.inputPermissions.setPermissionCategory(
+                InputPermissionCategory.Movement,
+                wasMovementEnabled,
+            );
+            player.inputPermissions.setPermissionCategory(
+                InputPermissionCategory.Camera,
+                wasCameraEnabled,
+            );
         }
     }
 
@@ -99,7 +123,11 @@ export class KairoUI {
         const { cascadeVictims } = this.controller.previewVersionSwitch(kairoId);
         if (cascadeVictims.length > 0) {
             const names = cascadeVictims.map((id) => this.formatAddonVersion(id));
-            const confirmed = await this.confirm.show(player, T.confirm.versionSwitchCascade, names);
+            const confirmed = await this.confirm.show(
+                player,
+                T.confirm.versionSwitchCascade,
+                names,
+            );
             if (!confirmed) return "back";
         }
 
@@ -110,7 +138,9 @@ export class KairoUI {
         this.controller.saveKairoVersionPreference(kairoId, origin);
         const ver = SemVerUtils.format(reg.version);
         const verLabel = origin === "latest" ? `Latest (${ver})` : ver;
-        player.sendMessage(`§e[Kairo] §rKairo §a${verLabel}§r is not available for live switch. Will activate on next world reload.`);
+        player.sendMessage(
+            `��e[Kairo] ��rKairo ��a${verLabel}��r is not available for live switch. Will activate on next world reload.`,
+        );
         player.playSound("random.orb");
         return "done";
     }
@@ -133,7 +163,9 @@ export class KairoUI {
 
         await this.controller.executeDisable(activeId);
 
-        player.sendMessage(`§b[Kairo] §r${world.registries.get(activeId)?.name ?? addonId} disabled`);
+        player.sendMessage(
+            `��b[Kairo] ��r${world.registries.get(activeId)?.name ?? addonId} disabled`,
+        );
         player.playSound("random.orb");
         return "done";
     }
@@ -163,19 +195,24 @@ export class KairoUI {
 
             if (cascadeVictims.length > 0) {
                 const names = cascadeVictims.map((id) => this.formatAddonVersion(id));
-                const confirmed = await this.confirm.show(player, T.confirm.versionSwitchCascade, names);
+                const confirmed = await this.confirm.show(
+                    player,
+                    T.confirm.versionSwitchCascade,
+                    names,
+                );
                 if (!confirmed) return "back";
             }
 
             await this.controller.executeVersionSwitch(currentActiveId, newKairoId);
 
             const name = world.registries.get(newKairoId)?.name ?? addonId;
-            player.sendMessage(`§b[Kairo] §r${name} switched to §a${verLabel(newKairoId)}`);
+            player.sendMessage(`��b[Kairo] ��r${name} switched to ��a${verLabel(newKairoId)}`);
             player.playSound("random.orb");
             return "done";
         }
 
-        const { plan, toActivate, implicitVersionSwitches } = this.controller.previewEnable(newKairoId);
+        const { plan, toActivate, implicitVersionSwitches } =
+            this.controller.previewEnable(newKairoId);
         const depsToActivate = toActivate.filter((id) => id !== newKairoId);
 
         if (implicitVersionSwitches.length > 0) {
@@ -186,19 +223,27 @@ export class KairoUI {
             const confirmed = await this.confirm.show(player, T.confirm.enableVersionSwitch, names);
             if (!confirmed) return "back";
 
-            const kairoSwitch = implicitVersionSwitches.find(({ to }) => world.registries.get(to)?.addonId === "kairo");
+            const kairoSwitch = implicitVersionSwitches.find(
+                ({ to }) => world.registries.get(to)?.addonId === "kairo",
+            );
             if (kairoSwitch) {
                 const target = world.registries.get(kairoSwitch.to);
-                if (target && this.onKairoLiveSwitch?.(
-                    kairoSwitch.to,
-                    "explicit",
-                    player,
-                    { addonId, kairoId: newKairoId, origin },
-                )) {
-                    player.sendMessage(`§e[Kairo] §rKairo ${SemVerUtils.format(target.version)} is required. Activation will resume after the switch completes.`);
+                if (
+                    target &&
+                    this.onKairoLiveSwitch?.(kairoSwitch.to, "explicit", player, {
+                        addonId,
+                        kairoId: newKairoId,
+                        origin,
+                    })
+                ) {
+                    player.sendMessage(
+                        `��e[Kairo] ��rKairo ${SemVerUtils.format(target.version)} is required. Activation will resume after the switch completes.`,
+                    );
                     return "close";
                 }
-                player.sendMessage(`§c[Kairo] §rCannot enable §e${addonId}§c until Kairo ${target ? SemVerUtils.format(target.version) : ""} is active.`);
+                player.sendMessage(
+                    `��c[Kairo] ��rCannot enable ��e${addonId}��c until Kairo ${target ? SemVerUtils.format(target.version) : ""} is active.`,
+                );
                 return "back";
             }
         } else if (depsToActivate.length > 0) {
@@ -207,10 +252,15 @@ export class KairoUI {
             if (!confirmed) return "back";
         }
 
-        await this.controller.executeEnableWithPlan(newKairoId, origin, plan, implicitVersionSwitches);
+        await this.controller.executeEnableWithPlan(
+            newKairoId,
+            origin,
+            plan,
+            implicitVersionSwitches,
+        );
 
         const name = world.registries.get(newKairoId)?.name ?? addonId;
-        player.sendMessage(`§b[Kairo] §r${name} §a${verLabel(newKairoId)}§r enabled`);
+        player.sendMessage(`��b[Kairo] ��r${name} ��a${verLabel(newKairoId)}��r enabled`);
         player.playSound("random.orb");
         return "done";
     }

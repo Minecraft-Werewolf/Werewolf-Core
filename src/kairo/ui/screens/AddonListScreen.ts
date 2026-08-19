@@ -1,6 +1,6 @@
 import type { Player } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
-import { SemVerUtils } from "@kairo-js/utils";
+import { SemVerUtils } from "../../utils/semver";
 import type { KairoWorldState } from "../../activation/types/world";
 import { AddonState } from "../../activation/types/state";
 import { T } from "../constants/TranslateKeys";
@@ -14,32 +14,28 @@ type AddonGroup = {
 };
 
 const STATE_PRIORITY: Record<GroupState, number> = {
-    active:     0,
-    inactive:   1,
+    active: 0,
+    inactive: 1,
     unresolved: 2,
 };
 
 const STATE_COLOR: Record<GroupState, string> = {
-    active:     "§9",
-    inactive:   "§c",
-    unresolved: "§8",
+    active: "��9",
+    inactive: "��c",
+    unresolved: "��8",
 };
 
 const STATE_KEY: Record<GroupState, string> = {
-    active:     T.addonState.active,
-    inactive:   T.addonState.inactive,
+    active: T.addonState.active,
+    inactive: T.addonState.inactive,
     unresolved: T.addonState.unresolved,
 };
 
 export class AddonListScreen {
-    async show(
-        player: Player,
-        world: KairoWorldState,
-    ): Promise<string | null> {
+    async show(player: Player, world: KairoWorldState): Promise<string | null> {
         const groups = this.buildAndSortGroups(world);
 
-        const form = new ActionFormData()
-            .title({ translate: T.addonList.title });
+        const form = new ActionFormData().title({ translate: T.addonList.title });
 
         for (const group of groups) {
             const anyKairoId = world.addonIdIndex.get(group.addonId)!.values().next().value!;
@@ -50,22 +46,15 @@ export class AddonListScreen {
 
             const stateRawtext = group.activeVersion
                 ? [
-                    { text: `\n§l${color}` },
-                    { translate: stateKey },
-                    { text: `§r: ${group.activeVersion}` },
-                ]
-                : [
-                    { text: `\n§l${color}` },
-                    { translate: stateKey },
-                ];
+                      { text: `\n��l${color}` },
+                      { translate: stateKey },
+                      { text: `��r: ${group.activeVersion}` },
+                  ]
+                : [{ text: `\n��l${color}` }, { translate: stateKey }];
 
             form.button(
                 {
-                    rawtext: [
-                        { text: "§l" },
-                        { translate: registry.name },
-                        ...stateRawtext,
-                    ],
+                    rawtext: [{ text: "��l" }, { translate: registry.name }, ...stateRawtext],
                 },
                 iconPath,
             );
@@ -95,7 +84,11 @@ export class AddonListScreen {
                 if (rt?.state === AddonState.INACTIVE) hasInactive = true;
             }
 
-            const state: GroupState = hasActive ? "active" : hasInactive ? "inactive" : "unresolved";
+            const state: GroupState = hasActive
+                ? "active"
+                : hasInactive
+                  ? "inactive"
+                  : "unresolved";
             groups.push({ addonId, state, activeVersion });
         }
 
