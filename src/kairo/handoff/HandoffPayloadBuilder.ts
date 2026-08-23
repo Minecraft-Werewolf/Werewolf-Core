@@ -2,6 +2,7 @@ import { AddonState, InactiveReasonCode } from "../activation/types/state";
 import type { KairoWorldState } from "../activation/types/world";
 import type { KairoRegistryQueryable } from "../KairoRegistryIndex";
 import type { CommandManifestController } from "../init/command/CommandManifestController";
+import { SemVerUtils } from "../utils/semver";
 import type { HandoffCommandManifestEntry, HandoffCommandRegistrarEntry, HandoffPayload, HandoffPendingActivation } from "./HandoffPayload";
 
 export type HandoffSwitchTarget = {
@@ -178,44 +179,7 @@ function findSwitchDependencyBlock(
 ): { addonId: string; versionRange: string } | undefined {
     const versionRange = dependencies[switchTargetRegistry.addonId];
     if (!versionRange) return undefined;
-    return versionSatisfies(switchTargetRegistry.version, versionRange)
+    return SemVerUtils.satisfies(switchTargetRegistry.version, versionRange)
         ? undefined
         : { addonId: switchTargetRegistry.addonId, versionRange };
-}
-
-function versionSatisfies(
-    version: { major: number; minor: number; patch: number; prerelease?: string },
-    range: string,
-): boolean {
-    const normalized = range.trim();
-    if (normalized === "*" || normalized === "") return true;
-
-    if (normalized.startsWith("^")) {
-        const base = parseVersion(normalized.slice(1));
-        if (!base) return false;
-        if (base.major > 0) return version.major === base.major && compareVersion(version, base) >= 0;
-        if (base.minor > 0) return version.major === 0 && version.minor === base.minor && compareVersion(version, base) >= 0;
-        return version.major === 0 && version.minor === 0 && version.patch === base.patch && compareVersion(version, base) >= 0;
-    }
-
-    const exact = parseVersion(normalized);
-    return exact ? compareVersion(version, exact) === 0 : false;
-}
-
-function parseVersion(value: string): { major: number; minor: number; patch: number; prerelease?: string } | undefined {
-    const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(value.trim());
-    if (!match) return undefined;
-    return {
-        major: Number(match[1]),
-        minor: Number(match[2]),
-        patch: Number(match[3]),
-        ...(match[4] !== undefined ? { prerelease: match[4] } : {}),
-    };
-}
-
-function compareVersion(
-    a: { major: number; minor: number; patch: number },
-    b: { major: number; minor: number; patch: number },
-): number {
-    return a.major - b.major || a.minor - b.minor || a.patch - b.patch;
 }
